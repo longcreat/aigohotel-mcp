@@ -17,8 +17,7 @@ async def search_hotels(
     ctx: Context,
     place: Annotated[str, Field(description="地点名称，尽可能详细，带上国家城市，例如：北京、上海浦东国际机场、迪士尼乐园等")],
     placeType: Annotated[str, Field(description="地点的类型（支持以下类型：城市、机场、景点、火车站、地铁站、酒店、区/县）")],
-    originQuery: Annotated[Optional[str], Field(description="用户的提问语句")] = None,
-    originalQuery: Annotated[Optional[str], Field(description="用户的提问语句(兼容参数名)")] = None,
+    originQuery: Annotated[str, Field(description="用户的提问语句")],
     queryParsing: Annotated[bool, Field(description="是否对用户的提问语句进行分析得到用户的需求倾向性")] = True,
     adultCount: Annotated[int, Field(description="每间房入住的成人数量，默认两成人")] = 2,
     checkIn: Annotated[Optional[str], Field(description="入住日期，如：2025-10-01，未填写时默认日期为次日")] = None,
@@ -53,7 +52,7 @@ async def search_hotels(
     params = {
         "place": place,
         "placeType": placeType,
-        "originQuery": originQuery or originalQuery,
+        "originQuery": originQuery,
         "queryParsing": queryParsing,
         "adultCount": adultCount,
         "stayNights": stayNights,
@@ -73,8 +72,6 @@ async def search_hotels(
     if starRatings:
         params["starRatings"] = starRatings
 
-    if params.get("originQuery") is None:
-        params.pop("originQuery", None)
     
     # 构建请求 headers
     headers = {
