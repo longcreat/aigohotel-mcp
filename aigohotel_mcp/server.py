@@ -1,23 +1,24 @@
 from fastmcp import FastMCP
+from fastmcp.server import Context
 import httpx
 import os
 from typing import Optional, Annotated
 from pydantic import Field
 from dotenv import load_dotenv
 
-# 加载 .env 文件
 load_dotenv()
 
 mcp = FastMCP("AigoHotel Search")
 
 API_BASE_URL = "https://mcp.aigohotel.com/mcp/hotelsearch"
-API_KEY = os.getenv("AIGOHOTEL_API_KEY", "")
 
 @mcp.tool(name="searchHotels")
 async def search_hotels(
-    originQuery: Annotated[str, Field(description="用户的提问语句")],
+    ctx: Context,
     place: Annotated[str, Field(description="地点名称，尽可能详细，带上国家城市，例如：北京、上海浦东国际机场、迪士尼乐园等")],
     placeType: Annotated[str, Field(description="地点的类型（支持以下类型：城市、机场、景点、火车站、地铁站、酒店、区/县）")],
+    originQuery: Annotated[Optional[str], Field(description="用户的提问语句")] = None,
+    originalQuery: Annotated[Optional[str], Field(description="用户的提问语句(兼容参数名)")] = None,
     queryParsing: Annotated[bool, Field(description="是否对用户的提问语句进行分析得到用户的需求倾向性")] = True,
     adultCount: Annotated[int, Field(description="每间房入住的成人数量，默认两成人")] = 2,
     checkIn: Annotated[Optional[str], Field(description="入住日期，如：2025-10-01，未填写时默认日期为次日")] = None,
@@ -33,10 +34,26 @@ async def search_hotels(
     """
     该工具用于查询全球酒店信息，支持筛选条件搜索酒店。
     """
+    # 从请求 header 中获取 Authorization
+    api_key = ""
+    if getattr(ctx, "request_context", None) and getattr(ctx.request_context, "request", None):
+        headers = ctx.request_context.request.headers
+        auth_header = (
+            headers.get("authorization")
+            or headers.get("Authorization")
+            or headers.get("x-secret-key")
+            or headers.get("X-Secret-Key")
+            or ""
+        )
+        if auth_header:
+            api_key = auth_header[7:].strip() if auth_header.startswith("Bearer ") else auth_header.strip()
+
+    if not api_key:
+        raise Exception("未提供 API Key，请在请求 header 中添加 Authorization: Bearer <your_api_key>")
     params = {
         "place": place,
         "placeType": placeType,
-        "originQuery": originQuery,
+        "originQuery": originQuery or originalQuery,
         "queryParsing": queryParsing,
         "adultCount": adultCount,
         "stayNights": stayNights,
@@ -55,18 +72,15 @@ async def search_hotels(
     
     if starRatings:
         params["starRatings"] = starRatings
+
+    if params.get("originQuery") is None:
+        params.pop("originQuery", None)
     
+    # 构建请求 headers
     headers = {
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}"
     }
-    
-    if API_KEY:
-        # 处理 API_KEY 可能已包含 Bearer 前缀的情况
-        auth_value = API_KEY.strip()
-        if auth_value.startswith("Bearer "):
-            headers["Authorization"] = auth_value
-        else:
-            headers["Authorization"] = f"Bearer {auth_value}"
     
     try:
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
@@ -80,12 +94,9 @@ async def search_hotels(
         raise Exception(f"查询酒店失败: {str(e)}")
 
 def main():
-    if not API_KEY:
-        print("警告: 未配置 AIGOHOTEL_API_KEY")
-    elif not API_KEY.startswith("mcp_"):
-        print("警告: API Key 格式错误,应以 'mcp_' 开头")
-    
-    mcp.run(transport="streamable-http")
+    print("AigoHotel MCP Server 启动中...")
+    print("认证方式: 从请求 header 中读取 Authorization")
+    mcp.run(transport="streamable-http", host="127.0.0.1", port=8000)
 
 if __name__ == "__main__":
     main()
