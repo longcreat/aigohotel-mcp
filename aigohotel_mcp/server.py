@@ -1,5 +1,5 @@
 from fastmcp import FastMCP
-from fastmcp.server import Context
+from fastmcp.server.dependencies import get_http_request
 import httpx
 import os
 from typing import Optional, Annotated
@@ -8,13 +8,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-mcp = FastMCP("AigoHotel Search")
+mcp = FastMCP("AigoHotel Search", version="1.0.0")
 
 API_BASE_URL = "https://mcp.aigohotel.com/mcp/hotelsearch"
 
 @mcp.tool(name="searchHotels")
 async def search_hotels(
-    ctx: Context,
     place: Annotated[str, Field(description="地点名称，尽可能详细，带上国家城市，例如：北京、上海浦东国际机场、迪士尼乐园等")],
     placeType: Annotated[str, Field(description="地点的类型（支持以下类型：城市、机场、景点、火车站、地铁站、酒店、区/县）")],
     originQuery: Annotated[str, Field(description="用户的提问语句")],
@@ -35,17 +34,22 @@ async def search_hotels(
     """
     # 从请求 header 中获取 Authorization
     api_key = ""
-    if getattr(ctx, "request_context", None) and getattr(ctx.request_context, "request", None):
-        headers = ctx.request_context.request.headers
-        auth_header = (
-            headers.get("authorization")
-            or headers.get("Authorization")
-            or headers.get("x-secret-key")
-            or headers.get("X-Secret-Key")
-            or ""
-        )
-        if auth_header:
-            api_key = auth_header[7:].strip() if auth_header.startswith("Bearer ") else auth_header.strip()
+    try:
+        request = get_http_request()
+        if request:
+            headers = request.headers
+            auth_header = (
+                headers.get("authorization")
+                or headers.get("Authorization")
+                or headers.get("x-secret-key")
+                or headers.get("X-Secret-Key")
+                or ""
+            )
+            if auth_header:
+                api_key = auth_header[7:].strip() if auth_header.startswith("Bearer ") else auth_header.strip()
+    except RuntimeError:
+        # 如果不在 HTTP 上下文中，get_http_request() 会抛出 RuntimeError
+        pass
 
     if not api_key:
         raise Exception("未提供 API Key，请在请求 header 中添加 Authorization: Bearer <your_api_key>")
@@ -93,7 +97,7 @@ async def search_hotels(
 def main():
     print("AigoHotel MCP Server 启动中...")
     print("认证方式: 从请求 header 中读取 Authorization")
-    mcp.run(transport="streamable-http", host="127.0.0.1", port=8000)
+    mcp.run(transport="http", host="127.0.0.1", port=8000)
 
 if __name__ == "__main__":
     main()
