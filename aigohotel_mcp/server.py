@@ -1,103 +1,19 @@
-from fastmcp import FastMCP
-from fastmcp.server.dependencies import get_http_request
-import httpx
-import os
-from typing import Optional, Annotated
-from pydantic import Field
 from dotenv import load_dotenv
+from fastmcp import FastMCP
+
+from .tools import register_tools
 
 load_dotenv()
 
 mcp = FastMCP("AigoHotel Search", version="1.0.0")
+register_tools(mcp)
 
-API_BASE_URL = "https://mcp.aigohotel.com/mcp/hotelsearch"
 
-@mcp.tool(name="searchHotels")
-async def search_hotels(
-    place: Annotated[str, Field(description="地点名称，尽可能详细，带上国家城市，例如：北京、上海浦东国际机场、迪士尼乐园等")],
-    placeType: Annotated[str, Field(description="地点的类型（支持以下类型：城市、机场、景点、火车站、地铁站、酒店、区/县）")],
-    originQuery: Annotated[str, Field(description="用户的提问语句")],
-    queryParsing: Annotated[bool, Field(description="是否对用户的提问语句进行分析得到用户的需求倾向性")] = True,
-    adultCount: Annotated[int, Field(description="每间房入住的成人数量，默认两成人")] = 2,
-    checkIn: Annotated[Optional[str], Field(description="入住日期，如：2025-10-01，未填写时默认日期为次日")] = None,
-    countryCode: Annotated[Optional[str], Field(description="国家三字码（例如：CHN）")] = None,
-    distanceInMeter: Annotated[int, Field(description="直线距离，单位（米），当地点是一个POI位置时生效，生效时默认设定值为5000")] = 5000,
-    language: Annotated[str, Field(description="当前语言环境，如：zh_CN，en_US等，默认zh_CN")] = "zh_CN",
-    size: Annotated[int, Field(description="返回酒店结果数量，默认10个酒店，最大不超过20个")] = 10,
-    starRatings: Annotated[Optional[list[float]], Field(description="酒店星级(0.0-5.0, 梯度为0.5)，默认[0.0, 5.0]，例如 [4.5, 5.0]，[0.0, 2.0]")] = None,
-    stayNights: Annotated[int, Field(description="入住天数，未填写时默认1天")] = 1,
-    withHotelAmenities: Annotated[bool, Field(description="是否包含酒店设施")] = True,
-    withRoomAmenities: Annotated[bool, Field(description="是否包含房间设施")] = True
-) -> dict:
-    """
-    该工具用于查询全球酒店信息，支持筛选条件搜索酒店。
-    """
-    # 从请求 header 中获取 Authorization
-    api_key = ""
-    try:
-        request = get_http_request()
-        if request:
-            headers = request.headers
-            auth_header = (
-                headers.get("authorization")
-                or headers.get("Authorization")
-                or headers.get("x-secret-key")
-                or headers.get("X-Secret-Key")
-                or ""
-            )
-            if auth_header:
-                api_key = auth_header[7:].strip() if auth_header.startswith("Bearer ") else auth_header.strip()
-    except RuntimeError:
-        # 如果不在 HTTP 上下文中，get_http_request() 会抛出 RuntimeError
-        pass
-
-    if not api_key:
-        raise Exception("未提供 API Key，请在请求 header 中添加 Authorization: Bearer <your_api_key>")
-    params = {
-        "place": place,
-        "placeType": placeType,
-        "originQuery": originQuery,
-        "queryParsing": queryParsing,
-        "adultCount": adultCount,
-        "stayNights": stayNights,
-        "distanceInMeter": distanceInMeter,
-        "size": size,
-        "withHotelAmenities": withHotelAmenities,
-        "withRoomAmenities": withRoomAmenities,
-        "language": language
-    }
-    
-    if checkIn:
-        params["checkIn"] = checkIn
-    
-    if countryCode:
-        params["countryCode"] = countryCode
-    
-    if starRatings:
-        params["starRatings"] = starRatings
-
-    
-    # 构建请求 headers
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {api_key}"
-    }
-    
-    try:
-        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-            response = await client.post(API_BASE_URL, json=params, headers=headers)
-            response.raise_for_status()
-            return response.json()
-    except httpx.HTTPError as e:
-        status_code = e.response.status_code if hasattr(e, 'response') else "Unknown"
-        raise Exception(f"HTTP请求失败 (状态码: {status_code}): {str(e)}")
-    except Exception as e:
-        raise Exception(f"查询酒店失败: {str(e)}")
-
-def main():
+def main() -> None:
     print("AigoHotel MCP Server 启动中...")
-    print("认证方式: 从请求 header 中读取 Authorization")
+    print("认证方式: 从请求 header 中读取 Authorization / X-Secret-Key")
     mcp.run(transport="http", host="127.0.0.1", port=8000)
+
 
 if __name__ == "__main__":
     main()
